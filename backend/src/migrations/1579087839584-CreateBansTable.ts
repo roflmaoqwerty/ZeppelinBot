@@ -1,4 +1,4 @@
-import { MigrationInterface, QueryRunner, Table, TableForeignKey } from "typeorm";
+import { MigrationInterface, QueryRunner, Table } from "typeorm";
 
 export class CreateBansTable1579087839584 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<any> {
