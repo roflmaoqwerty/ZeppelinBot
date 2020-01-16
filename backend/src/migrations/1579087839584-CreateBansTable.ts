@@ -18,6 +18,21 @@ export class CreateBansTable1579087839584 implements MigrationInterface {
             unsigned: true,
             isPrimary: true,
           },
+          {
+            name: "created_at",
+            type: "datetime",
+            isNullable: false,
+            default: "now()",
+          },
+          {
+            name: "expires_at",
+            type: "datetime",
+            isNullable: false,
+          },
+          {
+            name: "case_id",
+            type: "int",
+          },
         ],
       }),
     );
