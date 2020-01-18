@@ -1151,6 +1151,10 @@ export class ModActionsPlugin extends ZeppelinPlugin<TConfigSchema> {
       msg.channel.createMessage(errorMessage(`Failed to ban member`));
       return;
     }
+    // If ban is timed, add ban to DB
+    if (args.time) {
+      this.timedBans.addTimedBan(user.id, args.time);
+    }
 
     // Confirm the action to the moderator
     let response = `Banned **${memberToBan.user.username}#${memberToBan.user.discriminator}** (Case #${banResult.case.case_number})`;
