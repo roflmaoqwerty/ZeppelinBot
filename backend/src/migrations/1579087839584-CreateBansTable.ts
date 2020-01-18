@@ -1,4 +1,4 @@
-import { MigrationInterface, QueryRunner, Table } from "typeorm";
+import { MigrationInterface, QueryRunner, Table, TableForeignKey } from "typeorm";
 
 export class CreateBansTable1579087839584 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<any> {
@@ -32,6 +32,21 @@ export class CreateBansTable1579087839584 implements MigrationInterface {
           {
             name: "case_id",
             type: "int",
+            unsigned: true,
+          },
+        ],
+        indices: [
+          {
+            columnNames: ["expires_at", "case_id"],
+            isUnique: true,
+          },
+        ],
+        foreignKeys: [
+          {
+            columnNames: ["case_id"],
+            referencedTableName: "cases",
+            referencedColumnNames: ["id"],
+            onDelete: "CASCADE",
           },
         ],
       }),

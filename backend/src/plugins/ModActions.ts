@@ -4,6 +4,7 @@ import DiscordRESTError from "eris/lib/errors/DiscordRESTError"; // tslint:disab
 import DiscordHTTPError from "eris/lib/errors/DiscordHTTPError"; // tslint:disable-line
 import humanizeDuration from "humanize-duration";
 import { GuildCases } from "../data/GuildCases";
+import { GuildTimedBans } from "../data/GuildTimedBans";
 import {
   asSingleLine,
   createChunkedMessage,
@@ -119,6 +120,7 @@ export class ModActionsPlugin extends ZeppelinPlugin<TConfigSchema> {
 
   protected mutes: GuildMutes;
   protected cases: GuildCases;
+  protected timedBans: GuildTimedBans;
   protected serverLogs: GuildLogs;
 
   protected ignoredEvents: IIgnoredEvent[];
@@ -1019,7 +1021,8 @@ export class ModActionsPlugin extends ZeppelinPlugin<TConfigSchema> {
     this.sendSuccessMessage(msg.channel, response);
   }
 
-  @d.command("ban", "<user:string> [reason:string$]", {
+  @d.command("ban", "<user:string> <time:delay> <reason:string$>", {
+    overloads: ["<user:string> <time:delay>", "<user:string> [reason:string$]"],
     options: [{ name: "mod", type: "member" }],
     extra: {
       info: {
@@ -1028,7 +1031,7 @@ export class ModActionsPlugin extends ZeppelinPlugin<TConfigSchema> {
     },
   })
   @d.permission("can_ban")
-  async banCmd(msg, args: { user: string; reason?: string; mod?: Member }) {
+  async banCmd(msg, args: { user: string; time?: number; reason?: string; mod?: Member }) {
     const user = await this.resolveUser(args.user);
     if (!user) return this.sendErrorMessage(msg.channel, `User not found`);
 
@@ -1071,6 +1074,10 @@ export class ModActionsPlugin extends ZeppelinPlugin<TConfigSchema> {
     if (banResult.status === "failed") {
       msg.channel.createMessage(errorMessage(`Failed to ban member`));
       return;
+    }
+    // If ban is timed, add ban to DB
+    if (args.time) {
+      this.timedBans.addTimedBan(user.id, args.time);
     }
 
     // Confirm the action to the moderator
