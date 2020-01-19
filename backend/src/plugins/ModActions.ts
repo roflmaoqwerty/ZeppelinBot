@@ -33,6 +33,7 @@ import { renderTemplate } from "../templateFormatter";
 import { CaseArgs, CasesPlugin } from "./Cases";
 import { MuteResult, MutesPlugin } from "./Mutes";
 import * as t from "io-ts";
+import { EventListenerTypes } from "typeorm/metadata/types/EventListenerTypes";
 
 const ConfigSchema = t.type({
   dm_on_warn: t.boolean,
@@ -497,6 +498,70 @@ export class ModActionsPlugin extends ZeppelinPlugin<TConfigSchema> {
       case: createdCase,
       notifyResult,
     };
+  }
+
+  async unbanUserId(
+    userId: string,
+    reason: string = null,
+    time: number = null,
+    caseArgs: Partial<CaseArgs> = {},
+  ): Promise<BanResult> {
+    const casesPlugin = this.getPlugin<CasesPlugin>("cases");
+    const timeUntilUnban = time ? time && humanizeDuration(time) : "indefinite";
+
+    // If a unban time is specified, update or create a timed bans entry in the DB
+    const existingTimedBan = await this.timedBans.findExistingBanForUserId(userId);
+    if (time) {
+      if (existingTimedBan) {
+        this.timedBans.updateExpiryTime(userId, time);
+      } else {
+        this.timedBans.addTimedBan(userId, time);
+      }
+    }
+    this.ignoreEvent(IgnoredEventType.Unban, userId);
+    try {
+      await this.guild.unbanMember(userId);
+    } catch (e) {
+      return {
+        status: "failed",
+        error: e.getMessage(),
+      };
+    }
+
+    let theCase;
+    // Create an unban case. If timed ban exists, update that case.
+    if (existingTimedBan && existingTimedBan.case_id) {
+      theCase = await this.cases.find(existingTimedBan.case_id);
+      const noteDetails = [`Ban updated to ${time ? timeUntilUnban : "indefinite"}`];
+      const reasons = [reason, ...(caseArgs.extraNotes || [])];
+      for (const noteReason of reasons) {
+        await casesPlugin.createCaseNote({
+          caseId: existingTimedBan.case_id,
+          modId: caseArgs.modId,
+          body: noteReason,
+          noteDetails,
+          postInCaseLogOverride: false,
+        });
+      }
+      if (caseArgs.postInCaseLogOverride !== false) {
+        casesPlugin.postCaseToCaseLogChannel(existingTimedBan.case_id);
+      }
+    } else {
+      const createdCase = await casesPlugin.createCase({
+        ...caseArgs,
+        userId,
+        modId: caseArgs.modId,
+        type: CaseTypes.Unban,
+        reason,
+      });
+    }
+
+    // Log the action
+    const mod = await this.resolveUser(caseArgs.modId);
+    this.serverLogs.log(LogType.MEMBER_UNBAN, {
+      mod: stripObjectToScalars(mod),
+      userId,
+    });
   }
 
   @d.command("update", "<caseNumber:number> [note:string$]", {
@@ -1183,7 +1248,8 @@ export class ModActionsPlugin extends ZeppelinPlugin<TConfigSchema> {
     });
   }
 
-  @d.command("unban", "<user:string> [reason:string$]", {
+  @d.command("unban", "<user:string> <time:delay> <reason:string$>", {
+    overloads: ["<user:string> <time:delay>", "<user:string> [reason:string$]"],
     options: [{ name: "mod", type: "member" }],
     extra: {
       info: {
@@ -1192,7 +1258,7 @@ export class ModActionsPlugin extends ZeppelinPlugin<TConfigSchema> {
     },
   })
   @d.permission("can_ban")
-  async unbanCmd(msg: Message, args: { user: string; reason: string; mod: Member }) {
+  async unbanCmd(msg: Message, args: { user: string; time?: number; reason: string; mod: Member }) {
     const user = await this.resolveUser(args.user);
     if (!user) return this.sendErrorMessage(msg.channel, `User not found`);
 
@@ -1208,35 +1274,18 @@ export class ModActionsPlugin extends ZeppelinPlugin<TConfigSchema> {
     }
 
     this.serverLogs.ignoreLog(LogType.MEMBER_UNBAN, user.id);
+    const reason = this.formatReasonWithAttachments(args.reason, msg.attachments);
 
-    try {
-      this.ignoreEvent(IgnoredEventType.Unban, user.id);
-      await this.guild.unbanMember(user.id);
-    } catch (e) {
+    const unbanResult = await this.unbanUserId(user.id, reason, args.time, {
+      modId: mod.id,
+      ppId: mod.id !== msg.author.id ? msg.author.id : null,
+    });
+    if (unbanResult.status === "failed") {
       this.sendErrorMessage(msg.channel, "Failed to unban member; are you sure they're banned?");
       return;
     }
-
-    const reason = this.formatReasonWithAttachments(args.reason, msg.attachments);
-
-    // Create a case
-    const casesPlugin = this.getPlugin<CasesPlugin>("cases");
-    const createdCase = await casesPlugin.createCase({
-      userId: user.id,
-      modId: mod.id,
-      type: CaseTypes.Unban,
-      reason,
-      ppId: mod.id !== msg.author.id ? msg.author.id : null,
-    });
-
     // Confirm the action
-    this.sendSuccessMessage(msg.channel, `Member unbanned (Case #${createdCase.case_number})`);
-
-    // Log the action
-    this.serverLogs.log(LogType.MEMBER_UNBAN, {
-      mod: stripObjectToScalars(mod.user),
-      userId: user.id,
-    });
+    this.sendSuccessMessage(msg.channel, `Member unbanned (Case #${unbanResult.case.case_number})`);
   }
 
   @d.command("forceban", "<user:string> <time:delay> <reason:string$>", {
