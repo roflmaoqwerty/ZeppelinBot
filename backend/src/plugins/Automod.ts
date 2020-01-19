@@ -1227,10 +1227,10 @@ export class AutomodPlugin extends ZeppelinPlugin<TConfigSchema> {
       };
 
       if (matchResult.type === "message" || matchResult.type === "embed" || matchResult.type === "textspam") {
-        await this.getModActions().banUserId(matchResult.userId, reason, caseArgs);
+        await this.getModActions().banUserId(matchResult.userId, reason, undefined, caseArgs);
       } else if (matchResult.type === "raidspam") {
         for (const userId of matchResult.userIds) {
-          await this.getModActions().banUserId(userId, reason, caseArgs);
+          await this.getModActions().banUserId(userId, reason, undefined, caseArgs);
         }
       }
 

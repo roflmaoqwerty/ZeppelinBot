@@ -128,6 +128,7 @@ export class ModActionsPlugin extends ZeppelinPlugin<TConfigSchema> {
   async onLoad() {
     this.mutes = GuildMutes.getGuildInstance(this.guildId);
     this.cases = GuildCases.getGuildInstance(this.guildId);
+    this.timedBans = GuildTimedBans.getGuildInstance(this.guildId);
     this.serverLogs = new GuildLogs(this.guildId);
 
     this.ignoredEvents = [];
@@ -433,7 +434,12 @@ export class ModActionsPlugin extends ZeppelinPlugin<TConfigSchema> {
   /**
    * Ban the specified user id, whether or not they're actually on the server at the time. Generates a case.
    */
-  async banUserId(userId: string, reason: string = null, caseArgs: Partial<CaseArgs> = {}): Promise<BanResult> {
+  async banUserId(
+    userId: string,
+    reason: string = null,
+    time: number = null,
+    caseArgs: Partial<CaseArgs> = {},
+  ): Promise<BanResult> {
     const config = this.getConfig();
     const user = await this.resolveUser(userId);
 
@@ -473,6 +479,11 @@ export class ModActionsPlugin extends ZeppelinPlugin<TConfigSchema> {
       reason,
       noteDetails: notifyResult.status !== NotifyUserStatus.Ignored ? [ucfirst(notifyResult.text)] : [],
     });
+
+    if (time) {
+      await this.timedBans.addTimedBan(user.id, time);
+      await this.timedBans.setCaseId(user.id, createdCase.case_number);
+    }
 
     // Log the action
     const mod = await this.resolveUser(caseArgs.modId);
@@ -1066,7 +1077,7 @@ export class ModActionsPlugin extends ZeppelinPlugin<TConfigSchema> {
     }
 
     const reason = this.formatReasonWithAttachments(args.reason, msg.attachments);
-    const banResult = await this.banUserId(memberToBan.id, reason, {
+    const banResult = await this.banUserId(memberToBan.id, reason, args.time, {
       modId: mod.id,
       ppId: mod.id !== msg.author.id ? msg.author.id : null,
     });
@@ -1074,10 +1085,6 @@ export class ModActionsPlugin extends ZeppelinPlugin<TConfigSchema> {
     if (banResult.status === "failed") {
       msg.channel.createMessage(errorMessage(`Failed to ban member`));
       return;
-    }
-    // If ban is timed, add ban to DB
-    if (args.time) {
-      this.timedBans.addTimedBan(user.id, args.time);
     }
 
     // Confirm the action to the moderator
@@ -1232,7 +1239,8 @@ export class ModActionsPlugin extends ZeppelinPlugin<TConfigSchema> {
     });
   }
 
-  @d.command("forceban", "<user:string> [reason:string$]", {
+  @d.command("forceban", "<user:string> <time:delay> <reason:string$>", {
+    overloads: ["<user:string> <time:delay>", "<user:string> [reason:string$]"],
     options: [{ name: "mod", type: "member" }],
     extra: {
       info: {
@@ -1241,7 +1249,7 @@ export class ModActionsPlugin extends ZeppelinPlugin<TConfigSchema> {
     },
   })
   @d.permission("can_ban")
-  async forcebanCmd(msg: Message, args: { user: string; reason?: string; mod?: Member }) {
+  async forcebanCmd(msg: Message, args: { user: string; time?: number; reason?: string; mod?: Member }) {
     const user = await this.resolveUser(args.user);
     if (!user) return this.sendErrorMessage(msg.channel, `User not found`);
 
@@ -1275,25 +1283,17 @@ export class ModActionsPlugin extends ZeppelinPlugin<TConfigSchema> {
     this.ignoreEvent(IgnoredEventType.Ban, user.id);
     this.serverLogs.ignoreLog(LogType.MEMBER_BAN, user.id);
 
-    try {
-      await this.guild.banMember(user.id, 1);
-    } catch (e) {
+    const banResult = await this.banUserId(user.id, reason, args.time, {
+      modId: mod.id,
+      ppId: mod.id !== msg.author.id ? msg.author.id : null,
+    });
+    if (banResult.status === "failed") {
       this.sendErrorMessage(msg.channel, "Failed to forceban member");
       return;
     }
 
-    // Create a case
-    const casesPlugin = this.getPlugin<CasesPlugin>("cases");
-    const createdCase = await casesPlugin.createCase({
-      userId: user.id,
-      modId: mod.id,
-      type: CaseTypes.Ban,
-      reason,
-      ppId: mod.id !== msg.author.id ? msg.author.id : null,
-    });
-
     // Confirm the action
-    this.sendSuccessMessage(msg.channel, `Member forcebanned (Case #${createdCase.case_number})`);
+    this.sendSuccessMessage(msg.channel, `Member forcebanned (Case #${banResult.case.case_number})`);
 
     // Log the action
     this.serverLogs.log(LogType.MEMBER_FORCEBAN, {
