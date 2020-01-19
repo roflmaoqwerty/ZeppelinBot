@@ -33,6 +33,8 @@ export class CreateBansTable1579087839584 implements MigrationInterface {
             name: "case_id",
             type: "int",
             unsigned: true,
+            isNullable: true,
+            default: null,
           },
         ],
         indices: [
