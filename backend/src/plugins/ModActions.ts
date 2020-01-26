@@ -105,6 +105,16 @@ export type BanResult =
       notifyResult: INotifyUserResult;
     };
 
+export type UnbanResult =
+  | {
+      status: "failed";
+      error: string;
+    }
+  | {
+      status: "success";
+      case: Case;
+    };
+
 type WarnMemberNotifyRetryCallback = () => boolean | Promise<boolean>;
 
 export class ModActionsPlugin extends ZeppelinPlugin<TConfigSchema> {
@@ -505,56 +515,32 @@ export class ModActionsPlugin extends ZeppelinPlugin<TConfigSchema> {
     reason: string = null,
     time: number = null,
     caseArgs: Partial<CaseArgs> = {},
-  ): Promise<BanResult> {
+  ): Promise<UnbanResult> {
     const casesPlugin = this.getPlugin<CasesPlugin>("cases");
     const timeUntilUnban = time ? time && humanizeDuration(time) : "indefinite";
 
-    // If a unban time is specified, update or create a timed bans entry in the DB
-    const existingTimedBan = await this.timedBans.findExistingBanForUserId(userId);
-    if (time) {
-      if (existingTimedBan) {
-        this.timedBans.updateExpiryTime(userId, time);
-      } else {
-        this.timedBans.addTimedBan(userId, time);
+    if (!time) {
+      // If no time specified, unban right away
+      this.ignoreEvent(IgnoredEventType.Unban, userId);
+      try {
+        await this.guild.unbanMember(userId);
+      } catch (e) {
+        return {
+          status: "failed",
+          error: e.getMessage(),
+        };
       }
-    }
-    this.ignoreEvent(IgnoredEventType.Unban, userId);
-    try {
-      await this.guild.unbanMember(userId);
-    } catch (e) {
-      return {
-        status: "failed",
-        error: e.getMessage(),
-      };
     }
 
     let theCase;
-    // Create an unban case. If timed ban exists, update that case.
-    if (existingTimedBan && existingTimedBan.case_id) {
-      theCase = await this.cases.find(existingTimedBan.case_id);
-      const noteDetails = [`Ban updated to ${time ? timeUntilUnban : "indefinite"}`];
-      const reasons = [reason, ...(caseArgs.extraNotes || [])];
-      for (const noteReason of reasons) {
-        await casesPlugin.createCaseNote({
-          caseId: existingTimedBan.case_id,
-          modId: caseArgs.modId,
-          body: noteReason,
-          noteDetails,
-          postInCaseLogOverride: false,
-        });
-      }
-      if (caseArgs.postInCaseLogOverride !== false) {
-        casesPlugin.postCaseToCaseLogChannel(existingTimedBan.case_id);
-      }
-    } else {
-      const createdCase = await casesPlugin.createCase({
-        ...caseArgs,
-        userId,
-        modId: caseArgs.modId,
-        type: CaseTypes.Unban,
-        reason,
-      });
-    }
+    // Create an unban case
+    theCase = await casesPlugin.createCase({
+      ...caseArgs,
+      userId,
+      modId: caseArgs.modId,
+      type: CaseTypes.Unban,
+      reason,
+    });
 
     // Log the action
     const mod = await this.resolveUser(caseArgs.modId);
@@ -562,6 +548,22 @@ export class ModActionsPlugin extends ZeppelinPlugin<TConfigSchema> {
       mod: stripObjectToScalars(mod),
       userId,
     });
+
+    // If a unban time is specified, update or create a timed bans entry in the DB
+    const existingTimedBan = await this.timedBans.findExistingBanForUserId(userId);
+    if (time) {
+      if (existingTimedBan) {
+        await this.timedBans.updateExpiryTime(userId, time);
+      } else {
+        await this.timedBans.addTimedBan(userId, time);
+        await this.timedBans.setCaseId(userId, theCase.case_number);
+      }
+    }
+
+    return {
+      status: "success",
+      case: theCase,
+    };
   }
 
   @d.command("update", "<caseNumber:number> [note:string$]", {
