@@ -31,6 +31,8 @@ const defaultOptions = {
     mute_message: "You have been muted on the {guildName} server. Reason given: {reason}",
     timed_mute_message: "You have been muted on the {guildName} server for {time}. Reason given: {reason}",
     update_mute_message: "Your mute on the {guildName} server has been updated to {time}.",
+    remove_roles_on_mute: false,
+    restore_roles_on_mute: false,
 
     can_view_list: false,
     can_cleanup: false,
@@ -83,8 +85,23 @@ export const MutesPlugin = zeppelinPlugin<MutesPluginType>()("mutes", {
 
   public: {
     muteUser(pluginData) {
-      return (userId: string, muteTime: number = null, reason: string = null, muteOptions: MuteOptions = {}) => {
-        return muteUser(pluginData, userId, muteTime, reason, muteOptions);
+      return (
+        userId: string,
+        muteTime: number = null,
+        reason: string = null,
+        muteOptions: MuteOptions = {},
+        removeRolesOnMuteOverride: boolean | string[] = null,
+        restoreRolesOnMuteOverride: boolean | string[] = null,
+      ) => {
+        return muteUser(
+          pluginData,
+          userId,
+          muteTime,
+          reason,
+          muteOptions,
+          removeRolesOnMuteOverride,
+          restoreRolesOnMuteOverride,
+        );
       };
     },
     unmuteUser(pluginData) {

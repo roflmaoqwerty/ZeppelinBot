@@ -35,12 +35,19 @@ export async function logAndDetectOtherSpam(
       if (spamConfig.mute && member) {
         const mutesPlugin = pluginData.getPlugin(MutesPlugin);
         const muteTime = spamConfig.mute_time ? convertDelayStringToMS(spamConfig.mute_time.toString()) : 120 * 1000;
-        await mutesPlugin.muteUser(member.id, muteTime, "Automatic spam detection", {
-          caseArgs: {
-            modId: pluginData.client.user.id,
-            extraNotes: [`Details: ${details}`],
+        await mutesPlugin.muteUser(
+          member.id,
+          muteTime,
+          "Automatic spam detection",
+          {
+            caseArgs: {
+              modId: pluginData.client.user.id,
+              extraNotes: [`Details: ${details}`],
+            },
           },
-        });
+          spamConfig.remove_roles_on_mute,
+          spamConfig.restore_roles_on_mute,
+        );
       } else {
         // If we're not muting the user, just add a note on them
         const casesPlugin = pluginData.getPlugin(CasesPlugin);

@@ -15,4 +15,6 @@ export class Mute {
   @Column() expires_at: string;
 
   @Column() case_id: number;
+
+  @Column("simple-array") roles_to_restore: string[];
 }

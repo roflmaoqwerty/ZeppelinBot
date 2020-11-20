@@ -12,6 +12,8 @@ export const MuteAction = automodAction({
     duration: tNullable(tDelayString),
     notify: tNullable(t.string),
     notifyChannel: tNullable(t.string),
+    remove_roles_on_mute: tNullable(t.union([t.boolean, t.array(t.string)])),
+    restore_roles_on_mute: tNullable(t.union([t.boolean, t.array(t.string)])),
   }),
 
   defaultConfig: {
@@ -22,6 +24,8 @@ export const MuteAction = automodAction({
     const duration = actionConfig.duration ? convertDelayStringToMS(actionConfig.duration) : null;
     const reason = actionConfig.reason || "Muted automatically";
     const contactMethods = resolveActionContactMethods(pluginData, actionConfig);
+    const rolesToRemove = actionConfig.remove_roles_on_mute;
+    const rolesToRestore = actionConfig.restore_roles_on_mute;
 
     const caseArgs = {
       modId: pluginData.client.user.id,
@@ -32,7 +36,7 @@ export const MuteAction = automodAction({
 
     const mutes = pluginData.getPlugin(MutesPlugin);
     for (const userId of userIdsToMute) {
-      await mutes.muteUser(userId, duration, reason, { contactMethods, caseArgs });
+      await mutes.muteUser(userId, duration, reason, { contactMethods, caseArgs }, rolesToRemove, rolesToRestore);
     }
   },
 });

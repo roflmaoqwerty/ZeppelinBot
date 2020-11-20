@@ -69,12 +69,19 @@ export async function logAndDetectMessageSpam(
         if (spamConfig.mute && member) {
           const mutesPlugin = pluginData.getPlugin(MutesPlugin);
           const muteTime = spamConfig.mute_time ? convertDelayStringToMS(spamConfig.mute_time.toString()) : 120 * 1000;
-          muteResult = await mutesPlugin.muteUser(member.id, muteTime, "Automatic spam detection", {
-            caseArgs: {
-              modId: pluginData.client.user.id,
-              postInCaseLogOverride: false,
+          muteResult = await mutesPlugin.muteUser(
+            member.id,
+            muteTime,
+            "Automatic spam detection",
+            {
+              caseArgs: {
+                modId: pluginData.client.user.id,
+                postInCaseLogOverride: false,
+              },
             },
-          });
+            spamConfig.remove_roles_on_mute,
+            spamConfig.restore_roles_on_mute,
+          );
         }
 
         // Get the offending message IDs
